@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { Bot, CalendarDays, Clock, Globe2, LayoutDashboard, Loader2, LogOut, Pencil, Plus, Save, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,7 +26,7 @@ const emptyService: ServiceForm = { name: "", price: "", duration: "" };
 
 const validText = (value: string, max = 120) => value.trim().length > 0 && value.trim().length <= max;
 
-const DashboardShell = ({ children, onSignOut }: { children: React.ReactNode; onSignOut: () => void }) => (
+const DashboardShell = ({ children, onSignOut }: { children: ReactNode; onSignOut: () => void }) => (
   <div className="min-h-screen bg-background text-foreground lg:flex">
     <aside className="border-b bg-card px-4 py-4 shadow-soft lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:p-5">
       <div className="mb-6 flex items-center justify-between gap-3 lg:mb-10">
@@ -89,7 +89,7 @@ const ServicesPage = ({ userId }: { userId: string }) => {
     loadServices();
   }, []);
 
-  const saveService = async (event: React.FormEvent) => {
+  const saveService = async (event: FormEvent) => {
     event.preventDefault();
     if (!validText(form.name) || !validText(form.price, 40) || !validText(form.duration, 40)) {
       toast.error("Complete all service fields with valid lengths.");
