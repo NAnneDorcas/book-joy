@@ -57,6 +57,16 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        clinic: {
+          navy: "hsl(var(--clinic-navy))",
+          teal: "hsl(var(--clinic-teal))",
+          mint: "hsl(var(--clinic-mint))",
+          gold: "hsl(var(--clinic-gold))",
+        },
+        surface: {
+          soft: "hsl(var(--surface-soft))",
+          deep: "hsl(var(--surface-deep))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -80,10 +90,24 @@ export default {
             height: "0",
           },
         },
+        float: {
+          "0%, 100%": { transform: "translate3d(0, 0, 0)" },
+          "50%": { transform: "translate3d(0, -10px, 0)" },
+        },
+        pulseSoft: {
+          "0%, 100%": { opacity: "0.72", transform: "scale(1)" },
+          "50%": { opacity: "1", transform: "scale(1.04)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        float: "float 6s ease-in-out infinite",
+        pulseSoft: "pulseSoft 3.5s ease-in-out infinite",
+      },
+      boxShadow: {
+        soft: "var(--shadow-soft)",
+        glow: "var(--shadow-glow)",
       },
     },
   },
