@@ -1,0 +1,4 @@
+Name: Anne Dorcas Nguewouo Njamen
+Project: AI Booking Website 2026
+GitHub Repo: https://github.com/NAnneDorcas/book-joy.git
+Netlify URL: https://booking-anne.netlify.app/

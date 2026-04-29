@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { Bot, CalendarDays, Clock, Globe2, LayoutDashboard, Loader2, LogOut, Pencil, Plus, Save, Settings, Trash2 } from "lucide-react";
+import {
+  Bot,
+  CalendarDays,
+  Clock,
+  Globe2,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  Pencil,
+  Plus,
+  Save,
+  Settings,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
+import { supabase } from "@/lib/supabase";
 
 const navItems = [
   { label: "Services", path: "/dashboard/services", icon: LayoutDashboard },
@@ -16,17 +28,62 @@ const navItems = [
   { label: "Languages", path: "/dashboard/languages", icon: Globe2 },
 ];
 
-type Service = Tables<"clinic_services">;
-type Booking = Tables<"clinic_bookings">;
-type AgentSettings = Tables<"agent_settings">;
+type Service = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  duration_minutes: number;
+  is_active: boolean;
+  created_at: string;
+};
 
-type ServiceForm = { name: string; price: string; duration: string };
+type Booking = {
+  id: string;
+  service_id: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string | null;
+  start_time: string;
+  end_time: string;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  services?: {
+    name: string;
+  } | null;
+};
 
-const emptyService: ServiceForm = { name: "", price: "", duration: "" };
+type AgentSettings = {
+  id: number;
+  system_prompt: string;
+  mode: "info_only" | "full_booking";
+  knowledge_base: string;
+  opening_hours: string;
+  owner_email: string;
+};
 
-const validText = (value: string, max = 120) => value.trim().length > 0 && value.trim().length <= max;
+type ServiceForm = {
+  name: string;
+  description: string;
+  price: string;
+  duration_minutes: string;
+};
 
-const DashboardShell = ({ children, onSignOut }: { children: ReactNode; onSignOut: () => void }) => (
+const emptyService: ServiceForm = {
+  name: "",
+  description: "",
+  price: "",
+  duration_minutes: "",
+};
+
+const DashboardShell = ({
+  children,
+  onSignOut,
+}: {
+  children: ReactNode;
+  onSignOut: () => void;
+}) => (
   <div className="min-h-screen bg-background text-foreground lg:flex">
     <aside className="border-b bg-card px-4 py-4 shadow-soft lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:p-5">
       <div className="mb-6 flex items-center justify-between gap-3 lg:mb-10">
@@ -36,10 +93,11 @@ const DashboardShell = ({ children, onSignOut }: { children: ReactNode; onSignOu
           </span>
           <div>
             <p className="font-display font-black">BookingAgent Pro</p>
-            <p className="text-xs text-muted-foreground">Clinic dashboard</p>
+            <p className="text-xs text-muted-foreground">Owner dashboard</p>
           </div>
         </div>
       </div>
+
       <nav className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
         {navItems.map((item) => (
           <NavLink
@@ -47,7 +105,9 @@ const DashboardShell = ({ children, onSignOut }: { children: ReactNode; onSignOu
             to={item.path}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-semibold transition-colors ${
-                isActive ? "bg-primary text-primary-foreground shadow-glow" : "text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-glow"
+                  : "text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
               }`
             }
           >
@@ -56,15 +116,30 @@ const DashboardShell = ({ children, onSignOut }: { children: ReactNode; onSignOu
           </NavLink>
         ))}
       </nav>
+
       <Button variant="glass" className="mt-5 w-full" onClick={onSignOut}>
         <LogOut className="h-4 w-4" /> Sign out
       </Button>
+
+      <div className="mt-8 text-xs text-muted-foreground">
+        Built in AI Web Session 2026, BookingAgent Pro, Student: Anne Dorcas
+        Nguewouo, Team: TEAM_SLUG
+      </div>
     </aside>
-    <section className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</section>
+
+    <section className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      {children}
+    </section>
   </div>
 );
 
-const PageHeader = ({ title, subtitle }: { title: string; subtitle: string }) => (
+const PageHeader = ({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) => (
   <div className="mb-6">
     <p className="mb-2 font-semibold text-primary">BookingAgent Pro</p>
     <h1 className="font-display text-3xl font-black tracking-normal">{title}</h1>
@@ -72,16 +147,23 @@ const PageHeader = ({ title, subtitle }: { title: string; subtitle: string }) =>
   </div>
 );
 
-const ServicesPage = ({ userId }: { userId: string }) => {
+const ServicesPage = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [form, setForm] = useState<ServiceForm>(emptyService);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadServices = async () => {
-    const { data, error } = await supabase.from("clinic_services").select("*").order("created_at", { ascending: false });
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("services")
+      .select("*")
+      .order("created_at", { ascending: false });
+
     if (error) toast.error(error.message);
-    else setServices(data ?? []);
+    else setServices((data as Service[]) ?? []);
+
     setLoading(false);
   };
 
@@ -91,15 +173,36 @@ const ServicesPage = ({ userId }: { userId: string }) => {
 
   const saveService = async (event: FormEvent) => {
     event.preventDefault();
-    if (!validText(form.name) || !validText(form.price, 40) || !validText(form.duration, 40)) {
-      toast.error("Complete all service fields with valid lengths.");
+
+    if (!form.name.trim()) {
+      toast.error("Service name is required.");
       return;
     }
 
-    const payload = { name: form.name.trim(), price: form.price.trim(), duration: form.duration.trim() };
+    const price = Number(form.price);
+    const duration = Number(form.duration_minutes);
+
+    if (Number.isNaN(price) || price < 0) {
+      toast.error("Price must be a valid number.");
+      return;
+    }
+
+    if (Number.isNaN(duration) || duration <= 0) {
+      toast.error("Duration must be a valid number of minutes.");
+      return;
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      price,
+      duration_minutes: duration,
+      is_active: true,
+    };
+
     const { error } = editingId
-      ? await supabase.from("clinic_services").update(payload).eq("id", editingId)
-      : await supabase.from("clinic_services").insert({ ...payload, user_id: userId });
+      ? await supabase.from("services").update(payload).eq("id", editingId)
+      : await supabase.from("services").insert(payload);
 
     if (error) toast.error(error.message);
     else {
@@ -112,11 +215,19 @@ const ServicesPage = ({ userId }: { userId: string }) => {
 
   const editService = (service: Service) => {
     setEditingId(service.id);
-    setForm({ name: service.name, price: service.price, duration: service.duration });
+    setForm({
+      name: service.name,
+      description: service.description ?? "",
+      price: String(service.price),
+      duration_minutes: String(service.duration_minutes),
+    });
   };
 
   const deleteService = async (id: string) => {
-    const { error } = await supabase.from("clinic_services").delete().eq("id", id);
+    if (!confirm("Delete this service?")) return;
+
+    const { error } = await supabase.from("services").delete().eq("id", id);
+
     if (error) toast.error(error.message);
     else {
       toast.success("Service deleted");
@@ -126,29 +237,78 @@ const ServicesPage = ({ userId }: { userId: string }) => {
 
   return (
     <div>
-      <PageHeader title="Services" subtitle="Add, edit, and delete dental services available to patients." />
+      <PageHeader
+        title="Services"
+        subtitle="Add, edit, and delete services available to customers."
+      />
+
       <div className="grid gap-6 xl:grid-cols-[26rem_1fr]">
-        <form onSubmit={saveService} className="rounded-2xl border bg-card p-5 shadow-soft">
-          <h2 className="mb-4 font-display text-xl font-bold">{editingId ? "Edit service" : "Add service"}</h2>
+        <form
+          onSubmit={saveService}
+          className="rounded-2xl border bg-card p-5 shadow-soft"
+        >
+          <h2 className="mb-4 font-display text-xl font-bold">
+            {editingId ? "Edit service" : "Add service"}
+          </h2>
+
           <div className="space-y-4">
             <label className="block space-y-2 text-sm font-semibold">
               <span>Name</span>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Teeth Cleaning" maxLength={120} />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Signature Massage"
+              />
             </label>
+
+            <label className="block space-y-2 text-sm font-semibold">
+              <span>Description</span>
+              <Textarea
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+                placeholder="Short description of the service"
+              />
+            </label>
+
             <label className="block space-y-2 text-sm font-semibold">
               <span>Price</span>
-              <Input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="$120" maxLength={40} />
+              <Input
+                type="number"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="65"
+              />
             </label>
+
             <label className="block space-y-2 text-sm font-semibold">
-              <span>Duration</span>
-              <Input value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="45 min" maxLength={40} />
+              <span>Duration in minutes</span>
+              <Input
+                type="number"
+                value={form.duration_minutes}
+                onChange={(e) =>
+                  setForm({ ...form, duration_minutes: e.target.value })
+                }
+                placeholder="60"
+              />
             </label>
+
             <div className="flex gap-2">
               <Button variant="hero" type="submit" className="flex-1">
-                <Plus className="h-4 w-4" /> {editingId ? "Update" : "Add"}
+                <Plus className="h-4 w-4" />
+                {editingId ? "Update" : "Add"}
               </Button>
+
               {editingId && (
-                <Button variant="glass" type="button" onClick={() => { setEditingId(null); setForm(emptyService); }}>
+                <Button
+                  variant="glass"
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setForm(emptyService);
+                  }}
+                >
                   Cancel
                 </Button>
               )}
@@ -157,22 +317,61 @@ const ServicesPage = ({ userId }: { userId: string }) => {
         </form>
 
         <div className="rounded-2xl border bg-card shadow-soft">
-          <div className="grid grid-cols-[1fr_7rem_7rem_6rem] gap-3 border-b p-4 text-sm font-bold text-muted-foreground max-md:hidden">
-            <span>Service Name</span><span>Price</span><span>Duration</span><span>Actions</span>
+          <div className="grid grid-cols-[1fr_7rem_9rem_6rem] gap-3 border-b p-4 text-sm font-bold text-muted-foreground max-md:hidden">
+            <span>Service Name</span>
+            <span>Price</span>
+            <span>Duration</span>
+            <span>Actions</span>
           </div>
+
           {loading ? (
-            <div className="flex items-center gap-2 p-6 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading services</div>
+            <div className="flex items-center gap-2 p-6 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading services
+            </div>
           ) : services.length === 0 ? (
-            <div className="p-6 text-muted-foreground">No services yet. Add your first dental service.</div>
+            <div className="p-6 text-muted-foreground">
+              No services yet. Add your first service.
+            </div>
           ) : (
             services.map((service) => (
-              <div key={service.id} className="grid gap-3 border-b p-4 last:border-b-0 md:grid-cols-[1fr_7rem_7rem_6rem] md:items-center">
-                <strong>{service.name}</strong>
-                <span>{service.price}</span>
-                <span className="flex items-center gap-1"><Clock className="h-4 w-4 text-primary" /> {service.duration}</span>
+              <div
+                key={service.id}
+                className="grid gap-3 border-b p-4 last:border-b-0 md:grid-cols-[1fr_7rem_9rem_6rem] md:items-center"
+              >
+                <div>
+                  <strong>{service.name}</strong>
+                  {service.description && (
+                    <p className="text-sm text-muted-foreground">
+                      {service.description}
+                    </p>
+                  )}
+                </div>
+
+                <span>€{service.price}</span>
+
+                <span className="flex items-center gap-1">
+                  <Clock className="h-4 w-4 text-primary" />
+                  {service.duration_minutes} min
+                </span>
+
                 <div className="flex gap-2">
-                  <Button variant="glass" size="icon" onClick={() => editService(service)} aria-label="Edit service"><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="destructive" size="icon" onClick={() => deleteService(service.id)} aria-label="Delete service"><Trash2 className="h-4 w-4" /></Button>
+                  <Button
+                    variant="glass"
+                    size="icon"
+                    onClick={() => editService(service)}
+                    aria-label="Edit service"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    onClick={() => deleteService(service.id)}
+                    aria-label="Delete service"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ))
@@ -188,31 +387,52 @@ const BookingsPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("clinic_bookings").select("*").order("booking_date", { ascending: true }).then(({ data, error }) => {
-      if (error) toast.error(error.message);
-      else setBookings(data ?? []);
-      setLoading(false);
-    });
+    supabase
+      .from("bookings")
+      .select("*, services(name)")
+      .order("start_time", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) toast.error(error.message);
+        else setBookings((data as Booking[]) ?? []);
+        setLoading(false);
+      });
   }, []);
 
   return (
     <div>
-      <PageHeader title="Bookings" subtitle="Review patient appointments captured by the booking assistant." />
+      <PageHeader
+        title="Bookings"
+        subtitle="Review appointments created by the AI assistant."
+      />
+
       <div className="overflow-hidden rounded-2xl border bg-card shadow-soft">
-        <div className="grid grid-cols-4 gap-3 border-b p-4 text-sm font-bold text-muted-foreground max-md:hidden">
-          <span>Customer name</span><span>Service</span><span>Date</span><span>Time</span>
+        <div className="grid grid-cols-5 gap-3 border-b p-4 text-sm font-bold text-muted-foreground max-md:hidden">
+          <span>Customer</span>
+          <span>Email</span>
+          <span>Service</span>
+          <span>Start</span>
+          <span>Status</span>
         </div>
+
         {loading ? (
-          <div className="flex items-center gap-2 p-6 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading bookings</div>
+          <div className="flex items-center gap-2 p-6 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading bookings
+          </div>
         ) : bookings.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No bookings yet. New appointments will appear here.</div>
+          <div className="p-6 text-muted-foreground">
+            No bookings yet. New appointments will appear here.
+          </div>
         ) : (
           bookings.map((booking) => (
-            <div key={booking.id} className="grid gap-3 border-b p-4 last:border-b-0 md:grid-cols-4 md:items-center">
+            <div
+              key={booking.id}
+              className="grid gap-3 border-b p-4 last:border-b-0 md:grid-cols-5 md:items-center"
+            >
               <strong>{booking.customer_name}</strong>
-              <span>{booking.service}</span>
-              <span>{booking.booking_date}</span>
-              <span>{booking.booking_time.slice(0, 5)}</span>
+              <span>{booking.customer_email}</span>
+              <span>{booking.services?.name ?? booking.service_id}</span>
+              <span>{new Date(booking.start_time).toLocaleString()}</span>
+              <span>{booking.status}</span>
             </div>
           ))
         )}
@@ -221,71 +441,130 @@ const BookingsPage = () => {
   );
 };
 
-const AgentSettingsPage = ({ userId }: { userId: string }) => {
+const AgentSettingsPage = () => {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [knowledgeBase, setKnowledgeBase] = useState("");
+  const [openingHours, setOpeningHours] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
   const [fullBooking, setFullBooking] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const { data, error } = await supabase.from("agent_settings").select("*").maybeSingle();
+      const { data, error } = await supabase
+        .from("agent_settings")
+        .select("*")
+        .eq("id", 1)
+        .maybeSingle();
+
       if (error) toast.error(error.message);
+
       if (data) {
-        setSettings(data);
-        setPrompt(data.system_prompt);
-        setFullBooking(data.mode === "full_booking");
-      } else {
-        const { data: created, error: createError } = await supabase.from("agent_settings").insert({ user_id: userId }).select("*").single();
-        if (createError) toast.error(createError.message);
-        if (created) {
-          setSettings(created);
-          setPrompt(created.system_prompt);
-          setFullBooking(created.mode === "full_booking");
-        }
+        const settingsData = data as AgentSettings;
+        setSettings(settingsData);
+        setPrompt(settingsData.system_prompt);
+        setKnowledgeBase(settingsData.knowledge_base);
+        setOpeningHours(settingsData.opening_hours);
+        setOwnerEmail(settingsData.owner_email);
+        setFullBooking(settingsData.mode === "full_booking");
       }
+
       setLoading(false);
     };
+
     load();
-  }, [userId]);
+  }, []);
 
   const save = async () => {
-    if (!settings || prompt.trim().length < 20 || prompt.length > 2500) {
-      toast.error("System prompt must be between 20 and 2500 characters.");
+    if (!settings || prompt.trim().length < 20) {
+      toast.error("System prompt must be at least 20 characters.");
       return;
     }
+
     const { error } = await supabase
       .from("agent_settings")
-      .update({ system_prompt: prompt.trim(), mode: fullBooking ? "full_booking" : "information_only" })
+      .update({
+        system_prompt: prompt.trim(),
+        mode: fullBooking ? "full_booking" : "info_only",
+        knowledge_base: knowledgeBase,
+        opening_hours: openingHours,
+        owner_email: ownerEmail,
+      })
       .eq("id", settings.id);
+
     if (error) toast.error(error.message);
     else toast.success("Agent settings saved");
   };
 
   return (
     <div>
-      <PageHeader title="Agent Settings" subtitle="Control the assistant’s system instructions and booking behavior." />
+      <PageHeader
+        title="Agent Settings"
+        subtitle="Control the assistant’s system prompt, knowledge base, and booking behavior."
+      />
+
       <div className="rounded-2xl border bg-card p-5 shadow-soft">
         {loading ? (
-          <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading settings</div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading settings
+          </div>
         ) : (
           <div className="space-y-5">
             <label className="block space-y-2 text-sm font-semibold">
-              <span>Editable System Prompt</span>
-              <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="min-h-56" maxLength={2500} />
+              <span>System Prompt</span>
+              <Textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="min-h-40"
+                maxLength={2500}
+              />
             </label>
+
+            <label className="block space-y-2 text-sm font-semibold">
+              <span>Knowledge Base / Business Info</span>
+              <Textarea
+                value={knowledgeBase}
+                onChange={(e) => setKnowledgeBase(e.target.value)}
+                className="min-h-32"
+              />
+            </label>
+
+            <label className="block space-y-2 text-sm font-semibold">
+              <span>Opening Hours</span>
+              <Input
+                value={openingHours}
+                onChange={(e) => setOpeningHours(e.target.value)}
+              />
+            </label>
+
+            <label className="block space-y-2 text-sm font-semibold">
+              <span>Owner Email</span>
+              <Input
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
+              />
+            </label>
+
             <div className="flex flex-col gap-4 rounded-xl border bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-display font-bold">Booking mode</p>
-                <p className="text-sm text-muted-foreground">{fullBooking ? "Full Booking Mode" : "Information Only"}</p>
+                <p className="text-sm text-muted-foreground">
+                  {fullBooking ? "Full Booking Mode" : "Information Only"}
+                </p>
               </div>
+
               <div className="flex items-center gap-3 font-semibold">
                 <span>Information Only</span>
                 <Switch checked={fullBooking} onCheckedChange={setFullBooking} />
                 <span>Full Booking Mode</span>
               </div>
             </div>
-            <Button variant="hero" onClick={save}><Save className="h-4 w-4" /> Save Settings</Button>
+
+            <Button variant="hero" onClick={save}>
+              <Save className="h-4 w-4" />
+              Save Settings
+            </Button>
           </div>
         )}
       </div>
@@ -294,16 +573,23 @@ const AgentSettingsPage = ({ userId }: { userId: string }) => {
 };
 
 const LanguagesPage = () => {
-  const languages = ["English", "French", "Spanish", "German"];
+  const languages = ["English", "Estonian"];
+
   return (
     <div>
-      <PageHeader title="Languages" subtitle="Language options prepared for multilingual patient conversations." />
+      <PageHeader
+        title="Languages"
+        subtitle="Language support for multilingual customer conversations."
+      />
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {languages.map((language) => (
           <div key={language} className="rounded-2xl border bg-card p-5 shadow-soft">
             <Globe2 className="mb-4 h-6 w-6 text-primary" />
             <h2 className="font-display text-xl font-bold">{language}</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Available for assistant responses.</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Available for assistant responses.
+            </p>
           </div>
         ))}
       </div>
@@ -317,10 +603,12 @@ const Dashboard = () => {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user.id ?? null);
-      setChecking(false);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUserId(session?.user.id ?? null);
+        setChecking(false);
+      }
+    );
 
     supabase.auth.getSession().then(({ data }) => {
       setUserId(data.session?.user.id ?? null);
@@ -337,11 +625,12 @@ const Dashboard = () => {
 
   const routes = useMemo(() => {
     if (!userId) return null;
+
     return (
       <Routes>
-        <Route path="services" element={<ServicesPage userId={userId} />} />
+        <Route path="services" element={<ServicesPage />} />
         <Route path="bookings" element={<BookingsPage />} />
-        <Route path="agent-settings" element={<AgentSettingsPage userId={userId} />} />
+        <Route path="agent-settings" element={<AgentSettingsPage />} />
         <Route path="languages" element={<LanguagesPage />} />
         <Route path="*" element={<Navigate to="services" replace />} />
       </Routes>
@@ -349,7 +638,12 @@ const Dashboard = () => {
   }, [userId]);
 
   if (checking) {
-    return <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Checking session</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Checking session
+      </div>
+    );
   }
 
   if (!userId) return <Navigate to="/login" replace />;
