@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bot, Loader2, LockKeyhole, Mail, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -26,7 +26,7 @@ const Login = () => {
     return () => listener.subscription.unsubscribe();
   }, [navigate]);
 
-  const handleEmailAuth = async (event: React.FormEvent) => {
+  const handleEmailAuth = async (event: FormEvent) => {
     event.preventDefault();
     if (!email.trim() || password.length < 6) {
       toast.error("Enter a valid email and a password with at least 6 characters.");
